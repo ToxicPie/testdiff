@@ -1,0 +1,5 @@
+CompileFlags:
+  Add:
+    - -I/usr/include/libr
+    - -I/usr/include/libr/sdb
+    - -I/usr/include/capstone
