@@ -40,7 +40,7 @@ const std::vector<uint64_t> BasicBlock::primes = [] {
 BasicBlock::BasicBlock(const RAnalBlock *block)
     : dist{}, in_deg{}, inst_cnt{}, call_cnt{}, address{block->addr}, inst_hash{
                                                                           1} {
-    auto op = std::auto_ptr(r_anal_op_new());
+    auto op = std::unique_ptr<RAnalOp>(r_anal_op_new());
     auto *anal = block->anal;
     std::basic_string<uint8_t> buffer(block->size, 0);
 
