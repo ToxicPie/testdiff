@@ -65,8 +65,7 @@ BasicBlock::BasicBlock(const RAnalBlock *block)
         }
     }
 
-    std::cout << "  block " << std::hex << address << " has hash " << std::hex
-              << inst_hash << "\n";
+    std::cout << "  block " << address << " has hash " << inst_hash << "\n";
 }
 
 Function::Function(const RAnalFunction *func) {
@@ -87,7 +86,7 @@ Function::Function(const RAnalFunction *func) {
     // addr -> addr edges
     std::vector<std::pair<uint64_t, uint64_t>> edge_list;
 
-    std::cout << "function at " << func->addr << "\n";
+    std::cout << std::hex << "function at " << func->addr << "\n";
 
     auto *block_list = func->bbs;
     for (auto *iter = block_list->head; iter != nullptr; iter = iter->n) {
@@ -106,7 +105,8 @@ Function::Function(const RAnalFunction *func) {
             it1 != addrs.end() && it2 != addrs.end()) {
             edges[it1->second].push_back(it2->second);
             redges[it2->second].push_back(it1->second);
-            std::cout << "  edge " << it1->first << " -> " << it2->first << "\n";
+            std::cout << "  edge " << it1->first << " -> " << it2->first
+                      << "\n";
         }
     }
 
