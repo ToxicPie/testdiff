@@ -78,10 +78,18 @@ double similarity(const Function &a, const Function &b) {
     std::vector weights(left_edges.size(), KACTL::vd(right_edges.size()));
     for (int i = 0; i < left_edges.size(); i++) {
         for (int j = 0; j < right_edges.size(); j++) {
-            weights[i][j] = -similarity(left.blocks[left_edges[i].first],
-                                        right.blocks[right_edges[j].first]) *
-                            similarity(left.blocks[left_edges[i].second],
-                                       right.blocks[right_edges[j].second]);
+            double edge_similarity =
+                similarity(left.blocks[left_edges[i].first],
+                           right.blocks[right_edges[j].first]) *
+                similarity(left.blocks[left_edges[i].second],
+                           right.blocks[right_edges[j].second]);
+            double vertex_similarity =
+                (similarity(left.blocks[left_edges[i].first],
+                            right.blocks[right_edges[j].first]) +
+                 similarity(left.blocks[left_edges[i].second],
+                            right.blocks[right_edges[j].second])) /
+                2.0;
+            weights[i][j] = -(edge_similarity + vertex_similarity) / 2.0;
         }
     }
 
