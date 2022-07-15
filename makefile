@@ -1,8 +1,7 @@
 BINAME=testdiff
-SONAME=testdiff.so
 SRCS=$(wildcard *.cpp)
 OBJS=$(SRCS:%.cpp=%.o)
-CXXFLAGS=-Og -Wall -Wextra -std=c++17 -fPIC -g $(shell pkg-config --cflags r_main)
+CXXFLAGS=-O2 -Wall -Wextra -std=c++17 -fPIC -g $(shell pkg-config --cflags r_main)
 LDFLAGS=$(shell pkg-config --libs r_main)
 DEBUGFLAGS=-fsanitize=undefined,address
 
