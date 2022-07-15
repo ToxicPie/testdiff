@@ -1,10 +1,10 @@
 #ifndef _CFG_HPP
 #define _CFG_HPP
 
-#include <r_anal.h>
-
 #include <filesystem>
 #include <vector>
+
+#include <r_anal.h>
 
 
 struct BasicBlock {
@@ -15,12 +15,15 @@ struct BasicBlock {
     // small prime product, as described in the paper
     // "Graph-based comparison of Executable Objects"
     uint64_t inst_hash;
+    // references from this block
+    std::vector<uint64_t> str_refs, data_refs, code_refs;
     std::basic_string<uint8_t> instrs;
     BasicBlock() = delete;
     explicit BasicBlock(const RAnalBlock *block);
 };
 
 struct Function {
+    uint64_t address;
     std::vector<BasicBlock> blocks;
     // basic block graph; adjacency list
     std::vector<std::vector<int>> edges, redges;

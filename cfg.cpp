@@ -1,9 +1,5 @@
 #include "cfg.hpp"
 
-#include <r_anal.h>
-#include <r_core.h>
-#include <r_list.h>
-
 #include <algorithm>
 #include <bitset>
 #include <cstddef>
@@ -13,6 +9,8 @@
 #include <memory>
 #include <queue>
 #include <stdexcept>
+
+#include <r_core.h>
 
 
 const std::vector<uint64_t> BasicBlock::primes = [] {
@@ -40,7 +38,7 @@ const std::vector<uint64_t> BasicBlock::primes = [] {
 BasicBlock::BasicBlock(const RAnalBlock *block)
     : dist{}, in_deg{}, inst_cnt{}, call_cnt{}, address{block->addr}, inst_hash{
                                                                           1} {
-    auto op = std::unique_ptr<RAnalOp>(r_anal_op_new());
+    auto *op = r_anal_op_new();
     auto *anal = block->anal;
     std::basic_string<uint8_t> buffer(block->size, 0);
 
@@ -48,30 +46,61 @@ BasicBlock::BasicBlock(const RAnalBlock *block)
 
     for (int idx = 0; idx < block->size;) {
         while (idx < block->size) {
-            int oplen = r_anal_op(anal, op.get(), 0, &buffer[idx],
-                                  block->size - idx, R_ANAL_OP_MASK_BASIC);
+            int oplen = r_anal_op(anal, op, 0, &buffer[idx], block->size - idx,
+                                  R_ANAL_OP_MASK_BASIC);
             if (oplen < 1) {
                 break;
             }
             instrs += std::basic_string(&buffer[idx], &buffer[idx + oplen]);
-            idx += oplen;
-
-            inst_cnt += 1;
             // max op type is ~47
             inst_hash *= primes[op->type & 0xffU];
+
+            idx += oplen;
+            inst_cnt += 1;
             if (op->type == R_ANAL_OP_TYPE_CALL) {
                 call_cnt += 1;
+            }
+
+            // analyze refs
+            auto *ref_list = r_anal_refs_get(block->anal, address + idx);
+            // for some reason, r2 returns null for an empty ref list
+            if (ref_list != nullptr) {
+                for (auto *iter = ref_list->head; iter != nullptr;
+                     iter = iter->n) {
+                    auto *ref = reinterpret_cast<RAnalRef *>(iter->data);
+                    uint64_t ref_addr = ref->addr;
+                    switch (ref->type) {
+                    case R_ANAL_REF_TYPE_NULL: break;
+                    case R_ANAL_REF_TYPE_CODE:
+                    case R_ANAL_REF_TYPE_CALL:
+                        code_refs.push_back(ref_addr);
+                        break;
+                    case R_ANAL_REF_TYPE_DATA:
+                        data_refs.push_back(ref_addr);
+                        break;
+                    case R_ANAL_REF_TYPE_STRING:
+                        str_refs.push_back(ref_addr);
+                        break;
+                    }
+                    std::cout << "[info] " << std::hex << address + idx
+                              << " references " << ref_addr << "\n";
+                }
+                r_list_free(ref_list);
             }
         }
     }
 
-    std::cout << "  block " << address << " has hash " << inst_hash << "\n";
+    r_anal_op_free(op);
+
+    std::sort(instrs.begin(), instrs.end());
+    std::cout << "[info] " << std::hex << address << " hash is " << inst_hash
+              << "\n";
 }
 
-Function::Function(const RAnalFunction *func) {
+Function::Function(const RAnalFunction *func) : address(func->addr) {
     r_list_sort(func->bbs, [](const void *x, const void *y) {
-        const auto *a = static_cast<const RAnalBlock *>(x);
-        const auto *b = static_cast<const RAnalBlock *>(y);
+        const auto *a = reinterpret_cast<const RAnalBlock *>(x);
+        const auto *b = reinterpret_cast<const RAnalBlock *>(y);
         if (a->addr > b->addr) {
             return 1;
         }
@@ -86,18 +115,16 @@ Function::Function(const RAnalFunction *func) {
     // addr -> addr edges
     std::vector<std::pair<uint64_t, uint64_t>> edge_list;
 
-    std::cout << std::hex << "function at " << func->addr << "\n";
-
-    auto *block_list = func->bbs;
-    for (auto *iter = block_list->head; iter != nullptr; iter = iter->n) {
-        auto *block = static_cast<RAnalBlock *>(iter->data);
+    auto *fcns = func->bbs;
+    for (auto *iter = fcns->head; iter != nullptr; iter = iter->n) {
+        auto *block = reinterpret_cast<RAnalBlock *>(iter->data);
         blocks.emplace_back(block);
         addrs.emplace(block->addr, blocks.size() - 1);
         edge_list.emplace_back(block->addr, block->jump);
         edge_list.emplace_back(block->addr, block->fail);
     }
 
-    // build block level cfg
+    // build function cfg
     edges.resize(blocks.size());
     redges.resize(blocks.size());
     for (const auto &[from, to] : edge_list) {
@@ -105,8 +132,8 @@ Function::Function(const RAnalFunction *func) {
             it1 != addrs.end() && it2 != addrs.end()) {
             edges[it1->second].push_back(it2->second);
             redges[it2->second].push_back(it1->second);
-            std::cout << "  edge " << it1->first << " -> " << it2->first
-                      << "\n";
+            std::cout << "[info] " << std::hex << it1->first << " -> "
+                      << it2->first << "\n";
         }
     }
 
@@ -129,6 +156,7 @@ Function::Function(const RAnalFunction *func) {
             }
         }
     }
+
     for (int i = 0; i < blocks.size(); i++) {
         blocks[i].in_deg = redges[i].size();
         blocks[i].dist = dists[i];
@@ -153,9 +181,9 @@ BinaryFile::BinaryFile(const std::filesystem::path &filename) {
     r_core_cmd_str(core, "aaa");
     r_cons_flush();
 
-    auto *func_list = r_anal_get_fcns(core->anal);
-    for (auto *iter = func_list->head; iter != nullptr; iter = iter->n) {
-        auto *func = static_cast<RAnalFunction *>(iter->data);
+    auto *fcns = r_anal_get_fcns(core->anal);
+    for (auto *iter = fcns->head; iter != nullptr; iter = iter->n) {
+        auto *func = reinterpret_cast<RAnalFunction *>(iter->data);
         funcs.emplace_back(func);
     }
 
