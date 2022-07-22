@@ -16,7 +16,7 @@ double similarity(long long x, long long y, double thres) {
     if (ratio <= thres) {
         return 0.0;
     }
-    return (ratio - thres) / (1.0 - thres);
+    return pow((ratio - thres) / (1.0 - thres), 2);
 }
 
 double similarity(const BasicBlock &a, const BasicBlock &b) {
@@ -50,7 +50,7 @@ double similarity(const BasicBlock &a, const BasicBlock &b) {
                          data_ref_score + str_ref_score + dist_score +
                          deg_score;
 
-    return total_score / TOTAL_WEIGHT;
+    return sqrt(total_score / TOTAL_WEIGHT);
 }
 
 double similarity(const Function &a, const Function &b) {
@@ -67,40 +67,61 @@ double similarity(const Function &a, const Function &b) {
         }
     }
 
-    bool swapped = a_edges.size() > b_edges.size();
+    bool swapped_v = a.blocks.size() > b.blocks.size();
 
-    const Function &left = swapped ? b : a;
-    const Function &right = swapped ? a : b;
+    const Function &left_v = swapped_v ? b : a;
+    const Function &right_v = swapped_v ? a : b;
 
-    const auto &left_edges = swapped ? b_edges : a_edges;
-    const auto &right_edges = swapped ? a_edges : b_edges;
-
-    std::vector weights(left_edges.size(), KACTL::vd(right_edges.size()));
-    for (int i = 0; i < left_edges.size(); i++) {
-        for (int j = 0; j < right_edges.size(); j++) {
-            double edge_similarity =
-                similarity(left.blocks[left_edges[i].first],
-                           right.blocks[right_edges[j].first]) *
-                similarity(left.blocks[left_edges[i].second],
-                           right.blocks[right_edges[j].second]);
+    std::vector vert_weights(left_v.blocks.size(),
+                             KACTL::vd(right_v.blocks.size()));
+    for (int i = 0; i < left_v.blocks.size(); i++) {
+        for (int j = 0; j < right_v.blocks.size(); j++) {
             double vertex_similarity =
-                (similarity(left.blocks[left_edges[i].first],
-                            right.blocks[right_edges[j].first]) +
-                 similarity(left.blocks[left_edges[i].second],
-                            right.blocks[right_edges[j].second])) /
-                2.0;
-            weights[i][j] = -(edge_similarity + vertex_similarity) / 2.0;
+                similarity(left_v.blocks[i], right_v.blocks[j]);
+            vert_weights[i][j] = -vertex_similarity;
         }
     }
 
-    const auto [match_res, _ignored] = KACTL::hungarian(weights);
-    double match_score = -match_res;
+    bool swapped_e = a_edges.size() > b_edges.size();
+
+    const auto &left_edges = swapped_e ? b_edges : a_edges;
+    const auto &right_edges = swapped_e ? a_edges : b_edges;
+
+    std::vector edge_weights(left_edges.size(), KACTL::vd(right_edges.size()));
+    for (int i = 0; i < left_edges.size(); i++) {
+        for (int j = 0; j < right_edges.size(); j++) {
+            double sim_x = -(
+                swapped_e == swapped_v
+                    ? vert_weights[left_edges[i].first][right_edges[i].first]
+                    : vert_weights[right_edges[i].first][left_edges[i].first]);
+            double sim_y = -(
+                swapped_e == swapped_v
+                    ? vert_weights[left_edges[i].second][right_edges[i].second]
+                    : vert_weights[right_edges[i].second]
+                                  [left_edges[i].second]);
+            double edge_similarity = sim_x * sim_y;
+            double vertex_similarity = (sim_x + sim_y) / 2.0;
+            edge_weights[i][j] = -(edge_similarity + vertex_similarity) / 2.0;
+        }
+    }
+    const auto [match_res_e, _ignored_e] = KACTL::hungarian(edge_weights);
+    double match_score_e = -match_res_e;
     int total_edges = right_edges.size();
 
-    std::cout << "[info] " << a.address << " vs " << b.address << " score "
-              << match_score / total_edges << '\n';
+    const auto [match_res_v, _ignored_v] = KACTL::hungarian(vert_weights);
+    double match_score_v = -match_res_v;
+    int total_verts = right_v.blocks.size();
 
-    return match_score / total_edges;
+    double total_score = match_score_v / total_verts;
+    if (total_edges != 0) {
+        double edge_score = match_score_e / total_edges;
+        total_score = (total_score + edge_score) / 2;
+    }
+
+    std::cout << "[info] " << a.address << " vs " << b.address << " score "
+              << total_score << '\n';
+
+    return total_score;
 }
 
 void diff(const BinaryFile &a, const BinaryFile &b) {
